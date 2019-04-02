@@ -1,7 +1,7 @@
 ---
 title: "How accelerometers data can tell us how people exercise"
 author: "Nathalie Descusse-Brown"
-date: "March 18, 2019"
+date: "April 02, 2019"
 output: html_document
 ---
 
