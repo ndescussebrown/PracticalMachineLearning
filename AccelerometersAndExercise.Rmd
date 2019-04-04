@@ -1,18 +1,24 @@
 ---
-title: "How accelerometers data can tell us how people exercise"
+title: "How accelerometers, gyroscopes and magnetometers data can tell us whether people exercise correctly"
 author: "Nathalie Descusse-Brown"
-date: "April 02, 2019"
+date: "April 04, 2019"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
 ```
 
 ## Executive Summary
-This paper makes use of data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The aim of this paper is to use the data to predict the manner in which the participants  did the exercise. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).  
+This paper makes use of data from accelerometers, gyroscopes and magnetometers on the belt, forearm, arm, and dumbell of 6 participants. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The aim of this paper is to use the data to predict the manner in which the participants  did the exercise. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).  
 
 ## Data Processing
+
+The training dataset was accessed at the following site and assigned to the train tibble: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The testing dataset was accessed at the following site and assigned to the test tibble:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
 
 ```{r dataprocessing, cache=TRUE}
 ## load all data necessary to the assignment  
@@ -27,11 +33,19 @@ download.file(fileUrl2,destfile="pml-testing.csv")
 train <- read_csv("pml-training.csv")
 test <- read_csv("pml-testing.csv")
 
-#summary(train)
 ```
 
 
 ## Exploratory Analysis
+
+We know from the data source that the data is classified as follows:
+- Class A: performed exactly according to the specification
+- Class B: throwing the elbows to the front 
+- Class C: lifting the dumbbell only halfway 
+- Class D: lowering the dumbbell only halfway 
+- Class E: throwing the hips to the front.
+
+As there are 160 columns, the tibble train was first tidied up by removing the columns with a significant number of NA, empty, or #DIV/0! values. This leaves only 60 columns, which will significantly improve processing time. The first two columns of the train datasets were also removed as not necessary for model fitting. The test dataset was processed in a similar manner in view of making predictions.
 
 ```{r exploratoryanalysis}
 library(plyr)
@@ -39,6 +53,7 @@ library(Hmisc)
 
 
 tidytrain <- data.frame(stringsAsFactors=FALSE)
+tidytest <- data.frame(stringsAsFactors=FALSE)
 
 j <- 1
 for (i in 1:dim(train)[2])
@@ -46,130 +61,52 @@ for (i in 1:dim(train)[2])
                 if (((count(is.na(train[,i]))[[1,2]]>11773) & (count(train[,i]=="")[[1,2]]>7849) & (count(train[,i]=="#DIV/0!")[[1,2]]>7849)) & length(tidytrain)==0)
                 {
                         tidytrain <- train[,i]
-                        firstname <- colnames(train)[i]
+                        tidytest <- test[,i]
+                        # firstname <- colnames(train)[i]
                         j <- j+1
                 }
                 else if (((count(is.na(train[,i]))[[1,2]]>11773) & (count(train[,i]=="")[[1,2]]>7849) & (count(train[,i]=="#DIV/0!")[[1,2]]>7849)) & length(tidytrain)>0)
                 {
                         tidytrain <- cbind(tidytrain,train[,i])
+                        tidytest <- cbind(tidytest,test[,i])
                         colnames(tidytrain)[j] <- colnames(train)[i]
+                        colnames(tidytest)[j] <- colnames(test)[i]
                         j <- j+1
                 }
         }
         
-
-dim(tidytrain)
-names(tidytrain)
+tidytrain <- tidytrain[,-c(1,2)]
+tidytest <- tidytest[,-c(1,2)]
 ```
 
-We know from the data source that the data is classified as follows:
-- Class A: performed exactly according to the speci???cation
-- Class B: throwing the elbows to the front 
-- Class C: lifting the dumbbell only halfway 
-- Class D: lowering the dumbbell only halfway 
-- Class E: throwing the hips to the front.
 
 Because of the classification and the location of the measuring devices we make the following assumptions:
-- Class B should be associated with a negative gyros_dumbbell_z as the dumbell is pushed to the shoulder when the elbow goes to the front.
+- Class B should be associated with a negative gyros_dumbbell_z as the dumbell is pushed towards the shoulder when the elbow goes to the front.
 - Class C should be associated with smaller gyros_dumbbell_y and gyros_forearm_y compared to Class A and Class B.
 - Class D should be associated with similar amplitude gyros_dumbbell_y and gyros_forearm_y compared to Class C but shifted along the y axis.
 - Class E should be associated with larger gyros_belt_z compared to other classes.
 
 
 ```{r ggpairexploratory, out.width = '1000px', dpi=300}
-# library(ggplot2)
-# library(GGally)
-# totalcorr <- ggcorr(tidytrain, palette = "RdBu", label = TRUE)
-# summary(totalcorr)
 
 library(gridExtra) 
-# g = ggplot(tidytrain,aes(y=roll_belt,x=classe,colour=user_name))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-# g2 = ggplot(tidytrain,aes(y=pitch_belt,x=classe,colour=user_name))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# g3 = ggplot(tidytrain,aes(y=yaw_belt,x=classe,colour=user_name))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# g4 = ggplot(tidytrain,aes(y=total_accel_belt,x=classe,colour=user_name))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# 
-# grid.arrange(g, g2,g3,g4,nrow=2, ncol=2)
-# 
-# h = ggplot(tidytrain,aes(y=roll_forearm,x=classe,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-# h2 = ggplot(tidytrain,aes(y=pitch_forearm,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# h3 = ggplot(tidytrain,aes(y=yaw_forearm,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# h4 = ggplot(tidytrain,aes(y=total_accel_forearm,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# 
-# grid.arrange(h, h2,h3,h4,nrow=2, ncol=2)
-# 
-# k = ggplot(tidytrain,aes(y=gyros_belt_x,x=classe,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-# k2 = ggplot(tidytrain,aes(y=gyros_belt_y,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# k3 = ggplot(tidytrain,aes(y=gyros_belt_z,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# 
-# grid.arrange(k, k2,k3,nrow=2, ncol=2)
-# 
-# l = ggplot(tidytrain,aes(y=accel_belt_x,x=classe,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-# l2 = ggplot(tidytrain,aes(y=accel_belt_y,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# l3 = ggplot(tidytrain,aes(y=accel_belt_z,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#        geom_point(size=0.5)
-# 
-# grid.arrange(l, l2,l3,nrow=2, ncol=2)
 
-
-o = ggplot(tidytrain,aes(y=yaw_belt,x=roll_belt,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-o
-
-p = ggplot(tidytrain,aes(y=gyros_dumbbell_x,x=classe,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5) + ylim(-2,2)
-p2 = ggplot(tidytrain,aes(y=gyros_dumbbell_y,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
+p = ggplot(tidytrain,aes(y=accel_dumbbell_z,x=accel_dumbbell_x,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5) + ylim(-2,2)
+p2 = ggplot(tidytrain,aes(y=accel_dumbbell_y,x=accel_forearm_y,colour=classe))+geom_point(colour="pink",size=0.5)+
         geom_point(size=0.5) + ylim(-2,2)
-p3 = ggplot(tidytrain,aes(y=gyros_dumbbell_z,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
+p3 = ggplot(tidytrain,aes(y=accel_belt_z,x=accel_forearm_z,colour=classe))+geom_point(colour="pink",size=0.5)+
         geom_point(size=0.5) + ylim(-2,2)
 
 grid.arrange(p,p2,p3,nrow=2, ncol=2)
 
-# q = ggplot(tidytrain,aes(y=gyros_belt_x,x=classe,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5)
-# q2 = ggplot(tidytrain,aes(y=gyros_belt_y,x=classe,colour=classe))+geom_point(colour="pink",size=0.5)+
-#         geom_point(size=0.5)
-q3 = ggplot(tidytrain,aes(y=gyros_belt_z,x=gyros_forearm_z,colour=classe))+geom_point(colour="pink",size=0.5)+
-        geom_point(size=0.5) + xlim(-2,2)
-
-q3
-
-s = ggplot(tidytrain,aes(y=gyros_forearm_x,x=gyros_arm_x,colour=classe))+geom_point(colour="grey50",size=0.5)+geom_point(size=0.5) + ylim(-5,5)
-# s2 = ggplot(tidytrain,aes(y=gyros_forearm_y,x=gyros_arm_y,colour=classe))+geom_point(colour="pink",size=0.5)+
-#         geom_point(size=0.5)
-# s3 = ggplot(tidytrain,aes(y=gyros_forearm_z,x=gyros_arm_z,colour=classe))+geom_point(colour="pink",size=0.5)+
-#         geom_point(size=0.5)
-
-s
-# 
-# grid.arrange(s,s2,s3,nrow=2, ncol=2)
-
-
-tidytrainnum <- tidytrain[,sapply(tidytrain,is.numeric)]
-MMMmat<-as.matrix(tidytrainnum)
-
-M <- rcorr(MMMmat,type="pearson")
-
-for (i in 1:dim(M$r)[1])
-{
-   for (j in 1:i)
-   {
-     if (!is.na(M$P[i,j]) & M$r[i,j]>0.8 & i!=j & M$P[i,j] < 0.05 )
-     {
-       print(paste(rownames(M$r)[i], "-" , colnames(M$r)[j], ": ", M$r[i,j], ": ", M$P[i,j]))
-     }
-   }
-}
 
 ```
 
+We can see from the above that our assumptions were not verified as there is significant overlap (noise) between the data for the different classes. Owing to this and the fact that only a few of the covariates were considered in the exploratory analysis due to extend of the work required to look at all covariates, it was deemed more efficient to process with model selection.
 
 ## Model Selection and Results
+
+Because no specific clusters were identified in the exploratory analysis, a random forest model was selected as it is known to be widely used and highly accurate without making any assumption as to the distribution of the data. However, speed was an issue when running the model at first. Some research into parallel processing led us to this very helpful guidance: https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md. The computational speed was significantly improved by implementing parallel processing. The seeds argument of the trainControl function was also used to ensure reproducibility. Cross-validation was used as the training sample is relatively small with only 6 individuals.
 
 ```{r prediction}
 library(caret)
@@ -178,24 +115,36 @@ library(MASS)
 library(parallel)
 library(doParallel)
 
-#below taken from https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md
 cluster <- makeCluster(detectCores() - 1) 
 registerDoParallel(cluster)
-fitControl <- trainControl(method = "cv",
-                           number = 5,
-                           allowParallel = TRUE)
 
+seeds <- vector(mode = "list", length = 6)
+for(i in 1:5) seeds[[i]]<- sample.int(n=1000, 3)
+seeds[[6]] <- sample.int(1000, 1)
+
+fitControl <- trainControl(method = "cv",
+                            number = 5,
+                            allowParallel = TRUE, seeds=seeds)
 
 modelFit <- train(classe ~ .,method="rf",data=tidytrain,trControl = fitControl)
 
 stopCluster(cluster)
 registerDoSEQ()
-# modelFitoptim <- step(modelFit)
-# modelFit$finalModel
-modelFit
+print(modelFit)
 modelFit$resample
 confusionMatrix.train(modelFit)
 ```
 
 
-## Discussion
+## Discussion of the Model
+
+The above results from the model show a very good accuracy and kappa for all 10 fold resamples. This means that the estimated out of sample error is very small so the model appears to be performing well.
+
+
+## Predictions
+
+Predictions were then made on new data and evaluated in a separate submission.
+
+```{r predicting}
+prediction <- predict(modelFit,newdata=tidytest[,-60])
+```
